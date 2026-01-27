@@ -1,0 +1,51 @@
+.stepper {
+    display: flex;
+    align-items: center;
+  }
+  
+  .step {
+    display: flex;
+    align-items: center;
+    /* margin-right: 20px; */
+    position: relative;
+  }
+  
+  .line {
+    height: 2px;
+    background-color: #B8B8C9;
+    /* flex-grow: 1; */
+    /* margin: 0 10px; */
+    width: 180px;
+    /* margin-top: -30px; */
+  }
+  .line.active {
+    background-color: #0a6ceb;
+  }
+  
+  .step-circle {
+    width: 70px;
+    height: 70px;
+    background-color: #B8B8C9;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 16px;
+  }
+  
+  .step-circle.active {
+    background-color: #0a6ceb; /* Active step color */
+  }
+  
+  @media (max-width: 990px) {
+    .step-circle {
+      width: 50px;
+      height: 50px;
+    }
+
+    .line {
+      width: 64px;
+    }
+  }

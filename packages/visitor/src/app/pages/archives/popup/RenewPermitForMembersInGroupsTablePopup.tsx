@@ -1,0 +1,310 @@
+import React, { useEffect } from "react";
+import { useIntl } from "react-intl";
+import Modal from "react-bootstrap/Modal";
+import { showSuccessAlert } from "@4eplatform/shared/services/helper";
+import { object, string, InferType } from "yup";
+import { useDispatch } from "react-redux";
+import { useForm } from "react-hook-form";
+import { yupResolver } from "@hookform/resolvers/yup";
+import { renewPermission } from "../../../redux/permissions-list-slice";
+import { ModifiedVisitorDtoModel } from "../../../model/visitior-permission-group-model";
+import { getPermissionFavoriteOrArchiveGroup } from "../../../redux/visitor-permission-slice";
+import { Notification } from "@4eplatform/shared/services/notifications";
+import { getEmployee } from "@4eplatform/gateway/src/app/features/requestTemplate/requestTemplateSlice";
+import { useAppSelector } from "../../../redux/store";
+import { useNavigate } from "react-router-dom";
+import DisplayErrorMessage from "@4eplatform/shared/functions/displayErrorMessage";
+
+type PopupProps = {
+  show?: any;
+  handleClose?: any;
+  pageIndexForGroups?: number;
+  pageSizeForGroups?: number;
+  visitor?: ModifiedVisitorDtoModel;
+};
+
+const RenewPermitForMembersInGroupsTablePopup: React.FC<PopupProps> = ({
+  show,
+  handleClose,
+  pageIndexForGroups,
+  pageSizeForGroups,
+  visitor,
+}) => {
+  const intl = useIntl();
+  let dispatch = useDispatch();
+  let language: string = intl.locale;
+  let navigate = useNavigate();
+  let loggedInUserId = localStorage.getItem("userId");
+  const managementEmployees = useAppSelector((state) => {
+    return state?.managementEmployees?.employee;
+  });
+  useEffect(() => {
+    dispatch(getEmployee({}) as any);
+  }, []);
+  const RenewalPermitForMemberSchema = object({
+    startDate: string().required("InputFieldIsRequried"),
+    endDate: string().required("InputFieldIsRequried"),
+    startTime: string()
+      .required("InputFieldIsRequried"),
+      // .test({
+      //   name: "startTime",
+      //   message: "StartTimeMustBeBeforeEndTimeForTheSameDay",
+      //   test: function (value: any) {
+      //     let startDate = this.parent.startDate;
+      //     let endDate = this.parent.endDate;
+      //     if (
+      //       new Date(startDate).setHours(0, 0, 0, 0) ==
+      //         new Date(endDate).setHours(0, 0, 0, 0) &&
+      //       this.parent.endTime
+      //     ) {
+      //       return value < this.parent.endTime;
+      //     } else {
+      //       return true;
+      //     }
+      //   },
+      // }),
+    endTime: string()
+      .required("InputFieldIsRequried")
+      .test({
+        name: "endTime",
+        message: "EndTimeMustBeAfterStartTimeForTheSameDay",
+        test: function (value: any) {
+          let startDate = this.parent.startDate;
+          let endDate = this.parent.endDate;
+          if (
+            new Date(startDate).setHours(0, 0, 0, 0) ==
+              new Date(endDate).setHours(0, 0, 0, 0) &&
+            this.parent.startTime
+          ) {
+            return value > this.parent.startTime;
+          } else {
+            return true;
+          }
+        },
+      }),
+  });
+
+  type RenewalPermitForMemberProps = InferType<
+    typeof RenewalPermitForMemberSchema
+  >;
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<RenewalPermitForMemberProps>({
+    resolver: yupResolver(RenewalPermitForMemberSchema),
+    mode: "all",
+    reValidateMode: "onSubmit",
+  });
+  let formValues = watch();
+  let handleRenewPermitForVisitor = async (
+    formValues: RenewalPermitForMemberProps
+  ) => {
+    let body = {
+      visitorId: visitor?.visitorId,
+      putPermissionDto: {
+        startDate: formValues?.startDate,
+        endDate: formValues?.endDate,
+        startTime: `${formValues?.startTime}:00`,
+        endTime: `${formValues?.endTime}:00`,
+      },
+    };
+    try {
+      await dispatch(renewPermission(body) as any).then((res: any) => {
+        if (res?.payload?.statusEnum == 3) {
+          handleClose();
+          showSuccessAlert(true, "RenewedSuccessfully", intl, () => {
+            let params = {
+              pageSize: pageSizeForGroups,
+              pageIndex: pageIndexForGroups,
+              isFavoriteOrArchive: 1,
+              isArchive: true,
+            };
+            dispatch(getPermissionFavoriteOrArchiveGroup(params) as any);
+            if (
+              visitor?.recivedId &&
+              visitor?.recivedId != "00000000-0000-0000-0000-000000000000" &&
+              visitor?.reveivedMail
+            ) {
+              Notification.renewingPermitRequestForVisitor(
+                visitor?.recivedId,
+                `/visitormanagement/permissions-Permits`,
+                89,
+                "",
+                visitor?.reveivedMail,
+                true,
+                206,
+                new Date(),
+                "طلب تجديد",
+                "طلب تجديد",
+                "4d431df1-72ce-4ed5-828b-14eb52a6e80f",
+                ""
+              );
+            } else {
+              managementEmployees
+                ?.find((org) => {
+                  return org?.id == visitor?.orgId;
+                })
+                ?.mebmers?.forEach((member: any) => {
+                  if (member?.email) {
+                    Notification.renewingPermitRequestForVisitor(
+                      member?.userId,
+                      `/visitormanagement/permissions-Permits`,
+                      89,
+                      "",
+                      member?.email,
+                      true,
+                      206,
+                      new Date(),
+                      "طلب تجديد",
+                      "طلب تجديد",
+                      "4d431df1-72ce-4ed5-828b-14eb52a6e80f",
+                      ""
+                    );
+                  }
+                });
+            }
+            if (
+              loggedInUserId?.toLowerCase() == visitor?.recivedId?.toLowerCase()
+            ) {
+              window.location.href =
+                "/systems-services-settings/dynamic-workspace";
+            } else {
+              navigate("/systems-services-settings/dynamic-workspace");
+            }
+          });
+        } else if (res?.payload?.message) {
+          handleClose();
+          showSuccessAlert(false, res?.payload?.message, intl, () => {});
+        }
+      });
+    } catch (error) {}
+  };
+  return (
+    <>
+      <Modal
+        size="lg"
+        aria-labelledby="contained-modal-title-vcenter"
+        centered
+        show={show}
+        onHide={handleClose}
+      >
+        <Modal.Header
+          closeButton
+          style={{
+            alignItems: intl.locale == "ar" ? "flex-start" : "center",
+            flexDirection: intl.locale == "en" ? "column-reverse" : "row",
+          }}
+        >
+          <div className="card-header w-100 px-1 d-flex justify-content-center pb-2 border-0  mt-10">
+            <Modal.Title>
+              <h3 className="card-title flex-column align-items-center">
+                <span className="card-label fw-bolder fs-3 mb-2 ">
+                  {intl.formatMessage({ id: "RenewPermit" })}
+                </span>
+              </h3>
+            </Modal.Title>
+          </div>
+        </Modal.Header>
+        <form onSubmit={handleSubmit(handleRenewPermitForVisitor)}>
+          <Modal.Body>
+            <div className="row">
+              <div className="col-sm-4 col-12 my-2">
+                <label className="mb-2 required">
+                  {intl.formatMessage({
+                    id: "PermitStartDate",
+                  })}
+                </label>
+                <input
+                  className="form-control form-control-solid"
+                  type="date"
+                  {...register("startDate")}
+                  min={new Date()?.toISOString()?.split("T")[0]}
+                  placeholder={intl.formatMessage({ id: "StartDate" })}
+                />
+                {DisplayErrorMessage(
+                  errors?.startDate?.message,
+                  intl,
+                  language
+                )}
+              </div>
+              <div className="col-sm-4 col-12 my-2">
+                <label className="mb-2 required">
+                  {intl.formatMessage({
+                    id: "PermitEndDate",
+                  })}
+                </label>
+                <input
+                  className="form-control form-control-solid"
+                  type="date"
+                  min={formValues?.startDate}
+                  {...register("endDate")}
+                  placeholder={intl.formatMessage({ id: "PermitEndDate" })}
+                />
+                {DisplayErrorMessage(errors?.endDate?.message, intl, language)}
+              </div>
+              <div className="col-sm-4 col-12 my-2">
+                <label className="mb-2 required">
+                  {intl.formatMessage({
+                    id: "FromHour",
+                  })}
+                </label>
+                <input
+                  className="form-control form-control-solid"
+                  type="time"
+                  {...register("startTime")}
+                  placeholder={intl.formatMessage({ id: "FromHour" })}
+                />
+                {DisplayErrorMessage(
+                  errors?.startTime?.message,
+                  intl,
+                  language
+                )}
+              </div>
+              <div className="col-sm-4 col-12 my-2 ">
+                <label className="mb-2 required">
+                  {intl.formatMessage({
+                    id: "ToHour",
+                  })}
+                </label>
+                <input
+                  className="form-control form-control-solid"
+                  type="time"
+                  {...register("endTime")}
+                  placeholder={intl.formatMessage({ id: "ToHour" })}
+                />
+                {DisplayErrorMessage(errors?.endTime?.message, intl, language)}
+              </div>
+            </div>
+          </Modal.Body>
+          <Modal.Footer className="justify-content-center py-2">
+            <div className="mt-5 mb-5 col-12 col-lg-7 mx-auto">
+              <div className="outputCard card-diff-toolbar w-100 mt-3 d-flex justify-content-center">
+                <div className="d-flex justify-content-center align-items-center ">
+                  <div
+                    onClick={handleClose}
+                    className="btn btn-secondary mx-1 text-center"
+                  >
+                    {intl.formatMessage({ id: "Cancel" })}
+                  </div>
+                  <button
+                    type="submit"
+                    data-bs-dismiss="modal"
+                    className="btn btn-success mx-3"
+                    style={{ border: "none" }}
+                  >
+                    {intl.formatMessage({ id: "RenewPermit" })}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Modal.Footer>
+        </form>
+      </Modal>
+    </>
+  );
+};
+
+export default RenewPermitForMembersInGroupsTablePopup;
